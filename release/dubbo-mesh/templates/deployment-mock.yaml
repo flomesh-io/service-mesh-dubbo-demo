@@ -1,0 +1,81 @@
+---
+# Source: dubbo-mesh/templates/deployment-mock.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-service-dp
+  namespace: flomesh-dubbo
+  labels:
+    helm.sh/chart: dubbo-mesh-0.1.0
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/instance: poc-mock
+    app.kubernetes.io/version: "1.19.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dubbo-mesh
+      app.kubernetes.io/instance: poc-mock
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dubbo-mesh
+        app.kubernetes.io/instance: poc-mock
+    spec:
+      containers:
+      - name: mock
+        image: "flomesh/samples-mock-svc:1.0.0-dubbo"
+        imagePullPolicy: Always
+        ports:
+        #- name: dubbo
+        #  containerPort: 20880
+        #- name: canary
+        #  containerPort: 30881
+        - name: metrics
+          containerPort: 9001
+        #command:
+        #- /usr/local/bin/pipy
+        #- /config/mock.js
+        #- --reuse-port
+        #- --log-level=debug
+        env:
+        - name: _pod_ns
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: _pod_nodeName
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: _pod_name
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: _pod_serviceName
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['service.flomesh.io/name']
+        - name: _pod_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: _pod_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: _pod_hostIP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: PIPY_SERVICE_NAME
+          value: mock-service
+        #volumeMounts:
+        #- name:  config
+        #  mountPath:  /config
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60
+      #volumes:
+      #- name: config
+      #  configMap:
+      #    name: poc-mock-cfg

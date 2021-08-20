@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.zookeeper.service.name }}-dp
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "dubbo-mesh.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "dubbo-mesh.zookeeper-service.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dubbo-mesh.zookeeper-service.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: zk
+        image: "{{ .Values.zookeeper.image.name }}:{{ .Values.zookeeper.image.tag }}"
+        imagePullPolicy:  {{ .Values.zookeeper.image.pullPolicy }}
+        ports:
+        - name: zk
+          containerPort: {{ .Values.zookeeper.service.port }}

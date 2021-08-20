@@ -1,0 +1,18 @@
+{
+  "inbound": {
+    "whitelist": null,
+    "blacklist": null,
+    "circuitBreak": false,
+    "rateLimit": 0,
+    "dataLimit": 0,
+    "canary": {
+      "time": null,
+      "duration": 10,
+      "target": "127.0.0.1:30881"
+    }
+  },
+  "outbound": {
+    "rateLimit": 0,
+    "dataLimit": 0
+  }
+}

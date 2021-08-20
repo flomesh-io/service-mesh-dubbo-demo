@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    {{- include "dubbo-mesh.labels" . | nindent 4 }}
+    flomesh.io/inject: "true"
+  name: {{ .Values.namespace }}

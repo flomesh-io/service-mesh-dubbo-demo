@@ -1,0 +1,49 @@
+{{- if .Values.sidecar.enabled -}}
+apiVersion: flomesh.io/v1alpha1
+kind: ProxyProfile
+metadata:
+  name: poc-pf-dubbo
+spec:
+  namespace: {{ .Values.namespace }}
+  selector:
+    matchLabels:
+      {{- include "dubbo-mesh.dubbo.selectorLabels" . | nindent 6 }}
+  sidecars:
+  - name: proxy
+    env:
+    - name: PIPY_SERVICE_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['service.flomesh.io/name']
+    - name: PIPY_CONFIG_SRV_URL
+      value: {{ include "dubbo-mesh.config.url" . | quote }}
+    - name: PIPY_LISTEN_OUTBOUND_SOCKS
+      value: "1080"
+    - name: PIPY_LISTEN_INBOUND_DUBBO
+      value: "{{ .Values.dubbo.port | add 1 }}"
+    - name: PIPY_SERVICE_DUBBO_ADDR
+      value: "127.0.0.1:{{ .Values.dubbo.port }}"
+    - name: PIPY_LOGGER_URL
+      value: "http://127.0.0.1:{{ .Values.logger.service.port }}/log"
+  - name: logger
+    image: flomesh/pipy-pjs:0.4.0-116
+    imagePullPolicy: IfNotPresent
+    env:
+    - name: PIPY_SERVICE_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['service.flomesh.io/name']
+    - name: PIPY_LOG_SINK
+      value: {{ .Values.logger.sink.url | quote }}
+    - name: PIPY_METRICS_SINK
+      value: {{ include "dubbo-mesh.metrics.url" . | quote }}
+    - name: PIPY_LOGGER_LISTEN
+      value: {{ .Values.logger.service.port | quote }}
+  config:
+    proxy.js: |+
+{{ (.Files.Get "scripts/sidecar-dubbo.js") | replace "modules/config.js" "updater.js" | nindent 6 }}
+    updater.js: |+
+{{ (.Files.Get "scripts/modules/config.js") | nindent 6 }}
+    logger.js: |+
+{{ (.Files.Get "scripts/logger.js") | nindent 6 }}
+{{- end }}

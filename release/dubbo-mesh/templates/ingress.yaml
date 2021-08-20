@@ -1,0 +1,24 @@
+---
+# Source: dubbo-mesh/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-canary-router
+  namespace: flomesh-dubbo
+  labels:
+    helm.sh/chart: dubbo-mesh-0.1.0
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/version: "1.19.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  rules:
+    - host: "dubbo.demo.flomesh.cn"
+      http:
+        paths:
+          - path: /hello
+            pathType: Prefix
+            backend:
+              service:
+                name: canary-router-fsmsvc
+                port:
+                  number: 6000

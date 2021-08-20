@@ -1,0 +1,21 @@
+apiVersion: flomesh.io/v1alpha1
+kind: Proxy
+metadata:
+  name: {{ .Values.canary.service.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  mode: Standalone
+  replicas: 1
+  port: {{ .Values.canary.service.port }}
+  env:
+  - name: PIPY_SERVICE_NAME
+    value: {{ .Values.canary.service.name | quote }}
+  - name: PIPY_CONFIG_SRV_URL
+    value: {{ include "dubbo-mesh.config.url" . | quote }}
+  - name: PIPY_LISTEN_INBOUND_HTTP
+    value: "{{ .Values.canary.service.port }}"
+  config:
+    config.js: |+
+{{ (.Files.Get "scripts/canary.js") | replace "modules/config.js" "updater.js" | nindent 6 }}
+    updater.js: |+
+{{ (.Files.Get "scripts/modules/config.js") | nindent 6 }}

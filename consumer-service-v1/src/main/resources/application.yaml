@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: consumer-service-v1
+server:
+  port: 8080
+
+hello:
+  service:
+    version: 1.0.0
+date:
+  service:
+    version: 2.0.0
+time:
+  service:
+    version: 3.0.0
+
+embedded:
+  zookeeper:
+    port: 2181
+
+dubbo:
+  registry:
+    address: zookeeper://${SAMPLES_ZK_HOSTNAME:127.0.0.1}:${SAMPLES_ZK_PORT:2181}
+    file: ${user.home}/dubbo-cache/${spring.application.name}/dubbo.cache
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %logger{36} - %msg trace_id=%X{trace_id} span_id=%X{span_id} trace_flags=%X{trace_flags} %n"

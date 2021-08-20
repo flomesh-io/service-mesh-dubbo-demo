@@ -1,0 +1,117 @@
+---
+# Source: dubbo-mesh/templates/deployment-consumer-v1.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer-service-v1-dp
+  namespace: flomesh-dubbo
+  labels:
+    helm.sh/chart: dubbo-mesh-0.1.0
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/instance: consumer-service-v1
+    app.kubernetes.io/protocol: http
+    app.kubernetes.io/canary: v1
+    app.kubernetes.io/version: "1.19.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dubbo-mesh
+      app.kubernetes.io/instance: consumer-service-v1
+      app.kubernetes.io/protocol: http
+      app.kubernetes.io/canary: v1
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        flomesh.io/inject: "true"
+        service.flomesh.io/name: consumer-service-v1
+      labels:
+        app.kubernetes.io/name: dubbo-mesh
+        app.kubernetes.io/instance: consumer-service-v1
+        app.kubernetes.io/protocol: http
+        app.kubernetes.io/canary: v1
+    spec:
+      initContainers:
+      - name: init
+        image: "flomesh/wait-for-it:1.0.0"
+        imagePullPolicy: IfNotPresent
+        command:
+        - bash
+        - -c
+        - |+
+          /wait-for-it.sh --strict --timeout=0 \
+            --host=zookeeper-service.flomesh-dubbo.svc \
+            --port=2181 \
+            -- echo "SERVICE IS READY!"
+      containers:
+      - image: "flomesh/samples-consumer-svc:1.0.0-dubbo"
+        imagePullPolicy: Always
+        name: app
+        ports:
+        - name: http
+          containerPort: 8080
+        command:
+        - sh
+        - -c
+        - |-
+          proxychains4 -f /proxychains/proxychains.conf \
+            java -javaagent:/opentelemetry-javaagent-all.jar \
+            -Dotel.traces.exporter=logging \
+            -Dotel.metrics.exporter=none \
+            -Dotel.propagators=tracecontext,baggage,b3multi \
+            -Dotel.javaagent.debug=false \
+            -Dotel.resource.attributes="service.name=$(_pod_serviceName),service.namespace=$(_pod_ns),service.instance.id=$(_pod_name)" \
+            -Dotel.traces.sampler=parentbased_always_on \
+            -Xms512m -Xmx2048m \
+            -Djava.security.egd=file:/dev/./urandom \
+            -jar /app.jar
+        env:
+        - name: _pod_ns
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: _pod_nodeName
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: _pod_name
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: _pod_serviceName
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['service.flomesh.io/name']
+        - name: _pod_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: _pod_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: _pod_hostIP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: SAMPLES_ZK_HOSTNAME
+          value: zookeeper-service.flomesh-dubbo.svc
+        - name: SAMPLES_ZK_PORT
+          value: "2181"
+        volumeMounts:
+        - name: proxy-cfg
+          mountPath: /proxychains
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60
+      volumes:
+      - name: proxy-cfg
+        configMap:
+          name: proxychains-cfg

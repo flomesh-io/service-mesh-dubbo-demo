@@ -1,0 +1,203 @@
+---
+# Source: dubbo-mesh/templates/canary-router.yaml
+apiVersion: flomesh.io/v1alpha1
+kind: Proxy
+metadata:
+  name: canary-router
+  namespace: flomesh-dubbo
+spec:
+  mode: Standalone
+  replicas: 1
+  port: 6000
+  env:
+  - name: PIPY_SERVICE_NAME
+    value: "canary-router"
+  - name: PIPY_CONFIG_SRV_URL
+    value: "http://mock-service.flomesh-dubbo.svc:9001/services/$(PIPY_SERVICE_NAME)/config"
+  - name: PIPY_LISTEN_INBOUND_HTTP
+    value: "6000"
+  config:
+    config.js: |+
+
+      pipy({
+        _g: {
+          configInbound: null,
+          configOutbound: null,
+          responseCache: null,
+          autoRequestID: 0,
+        },
+      
+        _httpTarget: null,
+      })
+      
+        //
+        // Inbound traffic
+        //
+      .listen(os.env.PIPY_LISTEN_INBOUND_HTTP || 8080)
+        .decodeHttpRequest()
+        .demux('routing')
+        .encodeHttpResponse()
+
+      .pipeline('routing')
+        .handleMessageStart(
+          (msg, ver, canary) => (
+            console.log("msg.head.headers=" + JSON.stringify(msg.head.headers)),
+            ver = msg.head.headers['x-canary-version'],
+            console.log("X-CANARY-VERSION=" + ver),
+            canary = _g.configInbound.canary,
+            console.log("CANARY TARGETS=" + JSON.stringify(canary)),
+            ver && canary ? (
+              _httpTarget = canary[ver]
+            ) : (
+              _httpTarget = _g.configInbound.defaultTarget
+            ),
+            console.log("_httpTarget=" + _httpTarget)
+          )
+        )
+        .link(
+          'process', () => _httpTarget != undefined,
+          '404'
+        )
+      
+      .pipeline('process')
+        .encodeHttpRequest()
+        .connect(() => _httpTarget)
+        .decodeHttpResponse()
+      
+      .pipeline('404')
+        .replaceMessage(
+          new Message(
+            {
+              status: 404,
+              headers: {
+                'content-type': 'text/plain',
+              },
+            },
+            'Not Found\n'
+          )
+        )
+        .encodeHttpResponse()
+      
+        //
+        // Configuration update
+        //
+      .task('5s')
+        .use(
+          'updater.js',
+          'check',
+          os.env.PIPY_CONFIG_SRV_URL || 'http://127.0.0.1:9000/config',
+          config => (
+            _g.configInbound = config.inbound,
+            _g.configInbound.whitelist = config.inbound.whitelist?.map?.(cidr => new Netmask(cidr)),
+            _g.configInbound.blacklist = config.inbound.blacklist?.map?.(cidr => new Netmask(cidr)),
+            _g.responseCache = config.inbound.cache ? new algo.Cache(config.inbound.cache.size) : null,
+            _g.configOutbound = config.outbound
+          )
+        )
+    updater.js: |+
+
+      pipy({
+        _g: {
+          configVersion: 0,
+        },
+      
+        _configVersion: undefined,
+        _configUpdated: undefined,
+        _url: null,
+      })
+      
+      .pipeline('check')
+        .link(
+          'check-config-http', () => __argv[0].startsWith('http://'),
+          'check-config-file'
+        )
+      
+      // Check configuration in file
+      .pipeline('check-config-file')
+        .onMessageStart(
+          () => (
+            _configVersion = os.stat(__argv[0])?.mtime | 0,
+            _configVersion !== _g.configVersion && (
+              _g.configVersion = _configVersion,
+              _configUpdated = true
+            )
+          )
+        )
+        .link(
+          'update-config-file', () => _configUpdated,
+          'end-of-task'
+        )
+      
+      // Update configuration from file
+      .pipeline('update-config-file')
+        .onSessionStart(
+          () => (
+            console.log('Updating configuration...'),
+            __argv[1](JSON.decode(os.readFile(__argv[0]))),
+            console.log('Configuration updated.')
+          )
+        )
+        .link('end-of-task')
+      
+      // Check configuration via HTTP
+      .pipeline('check-config-http')
+        .replaceMessage(
+          () => (
+            _url = new URL(__argv[0] + '/version'),
+            new Message({
+              method: 'GET',
+              path: _url.path,
+              headers: {
+                Host: _url.host,
+              },
+            })
+          )
+        )
+        .encodeHttpRequest()
+        .connect(() => _url.host)
+        .decodeHttpResponse()
+        .replaceMessage(msg => (
+            msg.head.status === 200 && (
+                _configUpdated = msg.body.toString() != _g.configVersion,
+                _g.configVersion = msg.body.toString()
+            ),
+            msg
+        ))
+        .link(
+          'update-config-http', () => _configUpdated,
+          'end-of-task'
+        )
+      
+      // Update configuration from HTTP
+      .pipeline('update-config-http')
+        .onSessionStart(
+          () => console.log('Updating configuration...')
+        )
+        .replaceMessage(
+          () => (
+            _url = new URL(__argv[0]),
+            new Message({
+              method: 'GET',
+              path: _url.path,
+              headers: {
+                Host: _url.host,
+              },
+            })
+          )
+        )
+        .encodeHttpRequest()
+        .connect(
+          () => _url.host
+        )
+        .decodeHttpResponse()
+        .onMessageBody(
+          body => (
+            __argv[1](JSON.decode(body)),
+            console.log('Configuration updated.')
+          )
+        )
+        .link('end-of-task')
+      
+      // End of task
+      .pipeline('end-of-task')
+        .replaceMessage(new SessionEnd)

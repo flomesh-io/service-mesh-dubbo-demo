@@ -1,0 +1,309 @@
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+namespace: flomesh-dubbo
+
+image:
+  flomeshRepository: flomesh
+
+pipy:
+  image: pipy-pjs
+  tag: latest
+
+waitForIt:
+  image: wait-for-it
+  tag: 1.0.0
+  pullPolicy: IfNotPresent
+
+proxychains:
+  configMap:
+    name: proxychains-cfg
+
+logger:
+  replicaCount: 1
+  service:
+    name: poc-logger-svc
+    port: 9090
+  image:
+    pullPolicy: Always
+  configMap:
+    name: poc-logger-cfg
+  sink:
+    url: http://ch.demo.flomesh.cn:8123/?query=insert%20into%20log(message)%20format%20JSONAsString
+  podAnnotations: {}
+  strategy: {}
+  resources: {}
+
+mock:
+  mode: container
+  replicaCount: 1
+  vm:
+    ip: "192.168.54.147"
+  service:
+    name: mock-service
+    port:
+#      dubbo: 20880
+#      canary: 30881
+      metrics: 9001
+  image:
+    name: samples-mock-svc
+    tag: "1.0.0-dubbo"
+    pullPolicy: Always
+  configMap:
+    name: poc-mock-cfg
+  podAnnotations: {}
+  strategy: {}
+  resources: {}
+
+consumerV1:
+  replicaCount: 1
+  service:
+    name: consumer-service-v1
+    port:
+      http: 8080
+  image:
+    name: samples-consumer-svc
+    tag: "1.0.0-dubbo"
+    pullPolicy: Always
+  podAnnotations:
+    flomesh.io/inject: "true"
+    service.flomesh.io/name: consumer-service-v1
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  resources: {}
+
+helloV1:
+  replicaCount: 1
+  service:
+    name: hello-service-v1
+    port:
+      dubbo: 20880
+  image:
+    name: samples-hello-svc
+    tag: "1.0.0-dubbo"
+    pullPolicy: Always
+  podAnnotations:
+    flomesh.io/inject: "true"
+    service.flomesh.io/name: hello-service-v1
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  resources: {}
+
+dateV1:
+  replicaCount: 1
+  service:
+    name: date-service-v1
+    port:
+      dubbo: 20880
+  image:
+    name: samples-date-svc
+    tag: "1.0.0-dubbo"
+    pullPolicy: Always
+  podAnnotations:
+    flomesh.io/inject: "true"
+    service.flomesh.io/name: date-service-v1
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  resources: {}
+
+timeV1:
+  replicaCount: 1
+  service:
+    name: time-service-v1
+    port:
+      dubbo: 20880
+  image:
+    name: samples-time-svc
+    tag: "1.0.0-dubbo"
+    pullPolicy: Always
+  podAnnotations:
+    flomesh.io/inject: "true"
+    service.flomesh.io/name: time-service-v1
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  resources: {}
+
+consumerV2:
+  replicaCount: 1
+  service:
+    name: consumer-service-v2
+    port:
+      http: 8080
+  image:
+    name: samples-consumer-svc
+    tag: "2.0.0-dubbo"
+    pullPolicy: Always
+  podAnnotations:
+    flomesh.io/inject: "true"
+    service.flomesh.io/name: consumer-service-v2
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  resources: {}
+
+helloV2:
+  replicaCount: 1
+  service:
+    name: hello-service-v2
+    port:
+      dubbo: 20880
+  image:
+    name: samples-hello-svc
+    tag: "2.0.0-dubbo"
+    pullPolicy: Always
+  podAnnotations:
+    flomesh.io/inject: "true"
+    service.flomesh.io/name: hello-service-v2
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  resources: {}
+
+dateV2:
+  replicaCount: 1
+  service:
+    name: date-service-v2
+    port:
+      dubbo: 20880
+  image:
+    name: samples-date-svc
+    tag: "2.0.0-dubbo"
+    pullPolicy: Always
+  podAnnotations:
+    flomesh.io/inject: "true"
+    service.flomesh.io/name: date-service-v2
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  resources: {}
+
+timeV2:
+  replicaCount: 1
+  service:
+    name: time-service-v2
+    port:
+      dubbo: 20880
+  image:
+    name: samples-time-svc
+    tag: "2.0.0-dubbo"
+    pullPolicy: Always
+  podAnnotations:
+    flomesh.io/inject: "true"
+    service.flomesh.io/name: time-service-v2
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  resources: {}
+
+sidecar:
+  enabled: true
+
+dubbo:
+  port: 20880
+
+http:
+  port: 8080
+
+canary:
+  service:
+    name: canary-router
+    port: 6000
+
+zookeeper:
+  service:
+    name: zookeeper-service
+    port: 2181
+  image:
+    name: zookeeper
+    tag: 3.6.3
+    pullPolicy: IfNotPresent
+
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+  # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: dubbo.demo.flomesh.cn
+      paths:
+        - path: /hello
+          pathType: Prefix
+  tls: [ ]
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+nodeSelector: {}
+
+tolerations: [ ]
+
+affinity: {}
+
+restartPolicy: Always
+terminationGracePeriodSeconds: 60
+
+commonEnvs:
+  - name: _pod_ns
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.namespace
+  - name: _pod_nodeName
+    valueFrom:
+      fieldRef:
+        fieldPath: spec.nodeName
+  - name: _pod_name
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.name
+  - name: _pod_serviceName
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.annotations['service.flomesh.io/name']
+  - name: _pod_UID
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.uid
+  - name: _pod_IP
+    valueFrom:
+      fieldRef:
+        fieldPath: status.podIP
+  - name: _pod_hostIP
+    valueFrom:
+      fieldRef:
+        fieldPath: status.hostIP
+
+podCommand:
+  - sh
+  - -c
+  - |+
+      proxychains4 -f /proxychains/proxychains.conf \
+        java -javaagent:/opentelemetry-javaagent-all.jar \
+        -Dotel.traces.exporter=logging \
+        -Dotel.metrics.exporter=none \
+        -Dotel.propagators=tracecontext,baggage,b3multi \
+        -Dotel.javaagent.debug=false \
+        -Dotel.resource.attributes="service.name=$(_pod_serviceName),service.namespace=$(_pod_ns),service.instance.id=$(_pod_name)" \
+        -Dotel.traces.sampler=parentbased_always_on \
+        -Xms512m -Xmx2048m \
+        -Djava.security.egd=file:/dev/./urandom \
+        -jar /app.jar

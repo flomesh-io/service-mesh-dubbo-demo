@@ -1,0 +1,24 @@
+---
+# Source: dubbo-mesh/templates/service-mock.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-service
+  namespace: flomesh-dubbo
+spec:
+  selector:
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/instance: poc-mock
+  ports:
+  #- name: dubbo
+  #  port: 
+  #  targetPort: dubbo
+  #  protocol: TCP
+  #- name: canary
+  #  port: 
+  #  targetPort: canary
+  #  protocol: TCP
+  - name: metrics
+    port: 9001
+    targetPort: metrics
+    protocol: TCP

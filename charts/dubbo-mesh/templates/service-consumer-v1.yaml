@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.consumerV1.service.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    {{- include "dubbo-mesh.consumer-service-v1.selectorLabels" . | nindent 4 }}
+  ports:
+  - name: http
+    port: {{ .Values.consumerV1.service.port.http }}
+    protocol: TCP
+    targetPort: http
+  - name: proxy-http
+    port: {{ .Values.consumerV1.service.port.http | add 10 }}
+    protocol: TCP
+    targetPort: {{ .Values.consumerV1.service.port.http | add 10 }}

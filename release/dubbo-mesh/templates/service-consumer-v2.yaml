@@ -1,0 +1,22 @@
+---
+# Source: dubbo-mesh/templates/service-consumer-v2.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: consumer-service-v2
+  namespace: flomesh-dubbo
+spec:
+  selector:
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/instance: consumer-service-v2
+    app.kubernetes.io/protocol: http
+    app.kubernetes.io/canary: v2
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: http
+  - name: proxy-http
+    port: 8090
+    protocol: TCP
+    targetPort: 8090

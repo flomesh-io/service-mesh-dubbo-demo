@@ -1,0 +1,12 @@
+---
+# Source: dubbo-mesh/templates/namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    helm.sh/chart: dubbo-mesh-0.1.0
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/version: "1.19.0"
+    app.kubernetes.io/managed-by: Helm
+    flomesh.io/inject: "true"
+  name: flomesh-dubbo

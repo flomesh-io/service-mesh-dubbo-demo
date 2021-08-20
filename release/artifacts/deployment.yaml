@@ -1,0 +1,1635 @@
+---
+# Source: dubbo-mesh/templates/namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    helm.sh/chart: dubbo-mesh-0.1.0
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/version: "1.19.0"
+    app.kubernetes.io/managed-by: Helm
+    flomesh.io/inject: "true"
+  name: flomesh-dubbo
+---
+# Source: dubbo-mesh/templates/configmap-mock.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: poc-mock-cfg
+  namespace: flomesh-dubbo
+data:
+  mock.js: |+
+
+    pipy({
+      _g: {
+        config: {
+          version: 0,
+        },
+        responseVariation: 0,
+      },
+    
+      _router: new algo.URLRouter({
+        '/config/version': () => new Message(
+          _g.config.version.toString()
+        ),
+    
+        '/config': () => new Message(
+          JSON.encode(_g.config)
+        ),
+    
+        '/log': req => (
+          // console.log('[LOG]', req.body.toString()),
+          new Message('OK')
+        ),
+    
+        '/metrics': req => (
+          // console.log('[METRICS]', req.body.toString()),
+          new Message('OK')
+        ),
+    
+        '/*': () => new Message(
+          { status: 404 }, 'Not found'
+        )
+      })
+    })
+    
+    // Test driver: drives Dubbo with HTTP
+    .listen(6080)
+      .decodeHttpRequest()
+      .replaceMessageBody(
+        body => Hessian.encode(
+          JSON.decode(body)
+        )
+      )
+      .encodeDubbo()
+      .connect('127.0.0.1:20881')
+      .decodeDubbo()
+      .replaceMessageBody(
+        body => JSON.encode(
+          Hessian.decode(body)
+        )
+      )
+      .encodeHttpResponse()
+    
+    .listen(20880)
+      .decodeDubbo()
+      .replaceMessage(
+        msg => new Message(
+          {
+            id: msg.head.id,
+            status: 20,
+            isRequest: true,
+          },
+          Hessian.encode([++_g.responseVariation, 'Hi, there!'])
+        )
+      )
+      .encodeDubbo()
+    
+    .listen(30881)
+      .decodeDubbo()
+      .replaceMessage(
+        msg => new Message(
+          {
+            id: msg.head.id,
+            status: 20,
+            isRequest: true,
+          },
+          Hessian.encode([1, 'Hi, canary!'])
+        )
+      )
+      .encodeDubbo()
+    
+    .listen(9000)
+      .decodeHttpRequest()
+      .replaceMessage(
+        req => (
+          _router.find(req.head.path)(req)
+        )
+      )
+      .encodeHttpResponse()
+    
+    .task('1s')
+      .use(
+        'updater.js',
+        'check',
+        'config.json',
+        config => (
+          _g.config = {
+            ...config,
+            version: Date.now(),
+          }
+        )
+      )
+  config.json: |+
+
+    {
+      "inbound": {
+        "whitelist": null,
+        "blacklist": null,
+        "circuitBreak": false,
+        "rateLimit": 0,
+        "dataLimit": 0,
+        "canary": {
+          "time": null,
+          "duration": 10,
+          "target": "127.0.0.1:30881"
+        }
+      },
+      "outbound": {
+        "rateLimit": 0,
+        "dataLimit": 0
+      }
+    }
+  updater.js: |+
+
+    pipy({
+      _g: {
+        configVersion: 0,
+      },
+    
+      _configVersion: undefined,
+      _configUpdated: undefined,
+      _url: null,
+    })
+    
+    .pipeline('check')
+      .link(
+        'check-config-http', () => __argv[0].startsWith('http://'),
+        'check-config-file'
+      )
+    
+    // Check configuration in file
+    .pipeline('check-config-file')
+      .onMessageStart(
+        () => (
+          _configVersion = os.stat(__argv[0])?.mtime | 0,
+          _configVersion !== _g.configVersion && (
+            _g.configVersion = _configVersion,
+            _configUpdated = true
+          )
+        )
+      )
+      .link(
+        'update-config-file', () => _configUpdated,
+        'end-of-task'
+      )
+    
+    // Update configuration from file
+    .pipeline('update-config-file')
+      .onSessionStart(
+        () => (
+          console.log('Updating configuration...'),
+          __argv[1](JSON.decode(os.readFile(__argv[0]))),
+          console.log('Configuration updated.')
+        )
+      )
+      .link('end-of-task')
+    
+    // Check configuration via HTTP
+    .pipeline('check-config-http')
+      .replaceMessage(
+        () => (
+          _url = new URL(__argv[0] + '/version'),
+          new Message({
+            method: 'GET',
+            path: _url.path,
+            headers: {
+              Host: _url.host,
+            },
+          })
+        )
+      )
+      .encodeHttpRequest()
+      .connect(() => _url.host)
+      .decodeHttpResponse()
+      .replaceMessage(msg => (
+          msg.head.status === 200 && (
+              _configUpdated = msg.body.toString() != _g.configVersion,
+              _g.configVersion = msg.body.toString()
+          ),
+          msg
+      ))
+      .link(
+        'update-config-http', () => _configUpdated,
+        'end-of-task'
+      )
+    
+    // Update configuration from HTTP
+    .pipeline('update-config-http')
+      .onSessionStart(
+        () => console.log('Updating configuration...')
+      )
+      .replaceMessage(
+        () => (
+          _url = new URL(__argv[0]),
+          new Message({
+            method: 'GET',
+            path: _url.path,
+            headers: {
+              Host: _url.host,
+            },
+          })
+        )
+      )
+      .encodeHttpRequest()
+      .connect(
+        () => _url.host
+      )
+      .decodeHttpResponse()
+      .onMessageBody(
+        body => (
+          __argv[1](JSON.decode(body)),
+          console.log('Configuration updated.')
+        )
+      )
+      .link('end-of-task')
+    
+    // End of task
+    .pipeline('end-of-task')
+      .replaceMessage(new SessionEnd)
+---
+# Source: dubbo-mesh/templates/configmap-proxychains.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: proxychains-cfg
+  namespace: flomesh-dubbo
+data:
+  proxychains.conf: |
+    strict_chain
+
+    # Some timeouts in milliseconds
+    tcp_read_time_out 15000
+    tcp_connect_time_out 8000
+
+    ## Exclude connections to ANYwhere with port 2181, 5672, 6379, 3306
+    localnet 0.0.0.0:2181/0.0.0.0
+    localnet 0.0.0.0:5672/0.0.0.0
+    localnet 0.0.0.0:6379/0.0.0.0
+    localnet 0.0.0.0:3306/0.0.0.0
+
+    ## RFC5735 Loopback address range
+    ## enable it if you want to use an application that connects to localhost.
+    localnet 127.0.0.0/255.0.0.0
+
+    [ProxyList]
+    socks4 	127.0.0.1 1080
+---
+# Source: dubbo-mesh/templates/deployment-consumer-v1.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer-service-v1-dp
+  namespace: flomesh-dubbo
+  labels:
+    helm.sh/chart: dubbo-mesh-0.1.0
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/instance: consumer-service-v1
+    app.kubernetes.io/protocol: http
+    app.kubernetes.io/canary: v1
+    app.kubernetes.io/version: "1.19.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dubbo-mesh
+      app.kubernetes.io/instance: consumer-service-v1
+      app.kubernetes.io/protocol: http
+      app.kubernetes.io/canary: v1
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        flomesh.io/inject: "true"
+        service.flomesh.io/name: consumer-service-v1
+      labels:
+        app.kubernetes.io/name: dubbo-mesh
+        app.kubernetes.io/instance: consumer-service-v1
+        app.kubernetes.io/protocol: http
+        app.kubernetes.io/canary: v1
+    spec:
+      initContainers:
+      - name: init
+        image: "flomesh/wait-for-it:1.0.0"
+        imagePullPolicy: IfNotPresent
+        command:
+        - bash
+        - -c
+        - |+
+          /wait-for-it.sh --strict --timeout=0 \
+            --host=zookeeper-service.flomesh-dubbo.svc \
+            --port=2181 \
+            -- echo "SERVICE IS READY!"
+      containers:
+      - image: "flomesh/samples-consumer-svc:1.0.0-dubbo"
+        imagePullPolicy: Always
+        name: app
+        ports:
+        - name: http
+          containerPort: 8080
+        command:
+        - sh
+        - -c
+        - |-
+          proxychains4 -f /proxychains/proxychains.conf \
+            java -javaagent:/opentelemetry-javaagent-all.jar \
+            -Dotel.traces.exporter=logging \
+            -Dotel.metrics.exporter=none \
+            -Dotel.propagators=tracecontext,baggage,b3multi \
+            -Dotel.javaagent.debug=false \
+            -Dotel.resource.attributes="service.name=$(_pod_serviceName),service.namespace=$(_pod_ns),service.instance.id=$(_pod_name)" \
+            -Dotel.traces.sampler=parentbased_always_on \
+            -Xms512m -Xmx2048m \
+            -Djava.security.egd=file:/dev/./urandom \
+            -jar /app.jar
+        env:
+        - name: _pod_ns
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: _pod_nodeName
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: _pod_name
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: _pod_serviceName
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['service.flomesh.io/name']
+        - name: _pod_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: _pod_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: _pod_hostIP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: SAMPLES_ZK_HOSTNAME
+          value: zookeeper-service.flomesh-dubbo.svc
+        - name: SAMPLES_ZK_PORT
+          value: "2181"
+        volumeMounts:
+        - name: proxy-cfg
+          mountPath: /proxychains
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60
+      volumes:
+      - name: proxy-cfg
+        configMap:
+          name: proxychains-cfg
+---
+# Source: dubbo-mesh/templates/deployment-consumer-v2.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer-service-v2-dp
+  namespace: flomesh-dubbo
+  labels:
+    helm.sh/chart: dubbo-mesh-0.1.0
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/instance: consumer-service-v2
+    app.kubernetes.io/protocol: http
+    app.kubernetes.io/canary: v2
+    app.kubernetes.io/version: "1.19.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dubbo-mesh
+      app.kubernetes.io/instance: consumer-service-v2
+      app.kubernetes.io/protocol: http
+      app.kubernetes.io/canary: v2
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        flomesh.io/inject: "true"
+        service.flomesh.io/name: consumer-service-v2
+      labels:
+        app.kubernetes.io/name: dubbo-mesh
+        app.kubernetes.io/instance: consumer-service-v2
+        app.kubernetes.io/protocol: http
+        app.kubernetes.io/canary: v2
+    spec:
+      initContainers:
+      - name: init
+        image: "flomesh/wait-for-it:1.0.0"
+        imagePullPolicy: IfNotPresent
+        command:
+        - bash
+        - -c
+        - |+
+          /wait-for-it.sh --strict --timeout=0 \
+            --host=zookeeper-service.flomesh-dubbo.svc \
+            --port=2181 \
+            -- echo "SERVICE IS READY!"
+      containers:
+      - image: "flomesh/samples-consumer-svc:2.0.0-dubbo"
+        imagePullPolicy: Always
+        name: app
+        ports:
+        - name: http
+          containerPort: 8080
+        command:
+        - sh
+        - -c
+        - |-
+          proxychains4 -f /proxychains/proxychains.conf \
+            java -javaagent:/opentelemetry-javaagent-all.jar \
+            -Dotel.traces.exporter=logging \
+            -Dotel.metrics.exporter=none \
+            -Dotel.propagators=tracecontext,baggage,b3multi \
+            -Dotel.javaagent.debug=false \
+            -Dotel.resource.attributes="service.name=$(_pod_serviceName),service.namespace=$(_pod_ns),service.instance.id=$(_pod_name)" \
+            -Dotel.traces.sampler=parentbased_always_on \
+            -Xms512m -Xmx2048m \
+            -Djava.security.egd=file:/dev/./urandom \
+            -jar /app.jar
+        env:
+        - name: _pod_ns
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: _pod_nodeName
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: _pod_name
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: _pod_serviceName
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['service.flomesh.io/name']
+        - name: _pod_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: _pod_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: _pod_hostIP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: SAMPLES_ZK_HOSTNAME
+          value: zookeeper-service.flomesh-dubbo.svc
+        - name: SAMPLES_ZK_PORT
+          value: "2181"
+        volumeMounts:
+        - name: proxy-cfg
+          mountPath: /proxychains
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60
+      volumes:
+      - name: proxy-cfg
+        configMap:
+          name: proxychains-cfg
+---
+# Source: dubbo-mesh/templates/deployment-date-v1.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: date-service-v1-dp
+  namespace: flomesh-dubbo
+  labels:
+    helm.sh/chart: dubbo-mesh-0.1.0
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/instance: date-service-v1
+    app.kubernetes.io/protocol: dubbo
+    app.kubernetes.io/canary: v1
+    app.kubernetes.io/version: "1.19.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dubbo-mesh
+      app.kubernetes.io/instance: date-service-v1
+      app.kubernetes.io/protocol: dubbo
+      app.kubernetes.io/canary: v1
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        flomesh.io/inject: "true"
+        service.flomesh.io/name: date-service-v1
+      labels:
+        app.kubernetes.io/name: dubbo-mesh
+        app.kubernetes.io/instance: date-service-v1
+        app.kubernetes.io/protocol: dubbo
+        app.kubernetes.io/canary: v1
+    spec:
+      initContainers:
+      - name: init
+        image: "flomesh/wait-for-it:1.0.0"
+        imagePullPolicy: IfNotPresent
+        command:
+        - bash
+        - -c
+        - |+
+          /wait-for-it.sh --strict --timeout=0 \
+            --host=zookeeper-service.flomesh-dubbo.svc \
+            --port=2181 \
+            -- echo "SERVICE IS READY!"
+      containers:
+      - image: "flomesh/samples-date-svc:1.0.0-dubbo"
+        imagePullPolicy: Always
+        name: app
+        ports:
+        - name: dubbo
+          containerPort: 20880
+        command:
+        - sh
+        - -c
+        - |-
+          proxychains4 -f /proxychains/proxychains.conf \
+            java -javaagent:/opentelemetry-javaagent-all.jar \
+            -Dotel.traces.exporter=logging \
+            -Dotel.metrics.exporter=none \
+            -Dotel.propagators=tracecontext,baggage,b3multi \
+            -Dotel.javaagent.debug=false \
+            -Dotel.resource.attributes="service.name=$(_pod_serviceName),service.namespace=$(_pod_ns),service.instance.id=$(_pod_name)" \
+            -Dotel.traces.sampler=parentbased_always_on \
+            -Xms512m -Xmx2048m \
+            -Djava.security.egd=file:/dev/./urandom \
+            -jar /app.jar
+        env:
+        - name: _pod_ns
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: _pod_nodeName
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: _pod_name
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: _pod_serviceName
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['service.flomesh.io/name']
+        - name: _pod_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: _pod_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: _pod_hostIP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: SAMPLES_ZK_HOSTNAME
+          value: zookeeper-service.flomesh-dubbo.svc
+        - name: SAMPLES_ZK_PORT
+          value: "2181"
+        volumeMounts:
+        - name: proxy-cfg
+          mountPath: /proxychains
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - name: proxy-cfg
+          configMap:
+            name: proxychains-cfg
+---
+# Source: dubbo-mesh/templates/deployment-date-v2.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: date-service-v2-dp
+  namespace: flomesh-dubbo
+  labels:
+    helm.sh/chart: dubbo-mesh-0.1.0
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/instance: date-service-v2
+    app.kubernetes.io/protocol: dubbo
+    app.kubernetes.io/canary: v2
+    app.kubernetes.io/version: "1.19.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dubbo-mesh
+      app.kubernetes.io/instance: date-service-v2
+      app.kubernetes.io/protocol: dubbo
+      app.kubernetes.io/canary: v2
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        flomesh.io/inject: "true"
+        service.flomesh.io/name: date-service-v2
+      labels:
+        app.kubernetes.io/name: dubbo-mesh
+        app.kubernetes.io/instance: date-service-v2
+        app.kubernetes.io/protocol: dubbo
+        app.kubernetes.io/canary: v2
+    spec:
+      initContainers:
+      - name: init
+        image: "flomesh/wait-for-it:1.0.0"
+        imagePullPolicy: IfNotPresent
+        command:
+        - bash
+        - -c
+        - |+
+          /wait-for-it.sh --strict --timeout=0 \
+            --host=zookeeper-service.flomesh-dubbo.svc \
+            --port=2181 \
+            -- echo "SERVICE IS READY!"
+      containers:
+      - image: "flomesh/samples-date-svc:2.0.0-dubbo"
+        imagePullPolicy: Always
+        name: app
+        ports:
+        - name: dubbo
+          containerPort: 20880
+        command:
+        - sh
+        - -c
+        - |-
+          proxychains4 -f /proxychains/proxychains.conf \
+            java -javaagent:/opentelemetry-javaagent-all.jar \
+            -Dotel.traces.exporter=logging \
+            -Dotel.metrics.exporter=none \
+            -Dotel.propagators=tracecontext,baggage,b3multi \
+            -Dotel.javaagent.debug=false \
+            -Dotel.resource.attributes="service.name=$(_pod_serviceName),service.namespace=$(_pod_ns),service.instance.id=$(_pod_name)" \
+            -Dotel.traces.sampler=parentbased_always_on \
+            -Xms512m -Xmx2048m \
+            -Djava.security.egd=file:/dev/./urandom \
+            -jar /app.jar
+        env:
+        - name: _pod_ns
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: _pod_nodeName
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: _pod_name
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: _pod_serviceName
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['service.flomesh.io/name']
+        - name: _pod_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: _pod_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: _pod_hostIP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: SAMPLES_ZK_HOSTNAME
+          value: zookeeper-service.flomesh-dubbo.svc
+        - name: SAMPLES_ZK_PORT
+          value: "2181"
+        volumeMounts:
+        - name: proxy-cfg
+          mountPath: /proxychains
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - name: proxy-cfg
+          configMap:
+            name: proxychains-cfg
+---
+# Source: dubbo-mesh/templates/deployment-hello-v1.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-service-v1-dp
+  namespace: flomesh-dubbo
+  labels:
+    helm.sh/chart: dubbo-mesh-0.1.0
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/instance: hello-service-v1
+    app.kubernetes.io/protocol: dubbo
+    app.kubernetes.io/canary: v1
+    app.kubernetes.io/version: "1.19.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dubbo-mesh
+      app.kubernetes.io/instance: hello-service-v1
+      app.kubernetes.io/protocol: dubbo
+      app.kubernetes.io/canary: v1
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        flomesh.io/inject: "true"
+        service.flomesh.io/name: hello-service-v1
+      labels:
+        app.kubernetes.io/name: dubbo-mesh
+        app.kubernetes.io/instance: hello-service-v1
+        app.kubernetes.io/protocol: dubbo
+        app.kubernetes.io/canary: v1
+    spec:
+      initContainers:
+      - name: init
+        image: "flomesh/wait-for-it:1.0.0"
+        imagePullPolicy: IfNotPresent
+        command:
+        - bash
+        - -c
+        - |+
+          /wait-for-it.sh --strict --timeout=0 \
+            --host=zookeeper-service.flomesh-dubbo.svc \
+            --port=2181 \
+            -- echo "SERVICE IS READY!"
+      containers:
+      - image: "flomesh/samples-hello-svc:1.0.0-dubbo"
+        imagePullPolicy: Always
+        name: app
+        ports:
+        - name: dubbo
+          containerPort: 20880
+        command:
+        - sh
+        - -c
+        - |-
+          proxychains4 -f /proxychains/proxychains.conf \
+            java -javaagent:/opentelemetry-javaagent-all.jar \
+            -Dotel.traces.exporter=logging \
+            -Dotel.metrics.exporter=none \
+            -Dotel.propagators=tracecontext,baggage,b3multi \
+            -Dotel.javaagent.debug=false \
+            -Dotel.resource.attributes="service.name=$(_pod_serviceName),service.namespace=$(_pod_ns),service.instance.id=$(_pod_name)" \
+            -Dotel.traces.sampler=parentbased_always_on \
+            -Xms512m -Xmx2048m \
+            -Djava.security.egd=file:/dev/./urandom \
+            -jar /app.jar
+        env:
+        - name: _pod_ns
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: _pod_nodeName
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: _pod_name
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: _pod_serviceName
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['service.flomesh.io/name']
+        - name: _pod_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: _pod_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: _pod_hostIP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: SAMPLES_ZK_HOSTNAME
+          value: zookeeper-service.flomesh-dubbo.svc
+        - name: SAMPLES_ZK_PORT
+          value: "2181"
+        volumeMounts:
+        - name: proxy-cfg
+          mountPath: /proxychains
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60
+      volumes:
+      - name: proxy-cfg
+        configMap:
+          name: proxychains-cfg
+---
+# Source: dubbo-mesh/templates/deployment-hello-v2.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-service-v2-dp
+  namespace: flomesh-dubbo
+  labels:
+    helm.sh/chart: dubbo-mesh-0.1.0
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/instance: hello-service-v2
+    app.kubernetes.io/protocol: dubbo
+    app.kubernetes.io/canary: v2
+    app.kubernetes.io/version: "1.19.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dubbo-mesh
+      app.kubernetes.io/instance: hello-service-v2
+      app.kubernetes.io/protocol: dubbo
+      app.kubernetes.io/canary: v2
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        flomesh.io/inject: "true"
+        service.flomesh.io/name: hello-service-v2
+      labels:
+        app.kubernetes.io/name: dubbo-mesh
+        app.kubernetes.io/instance: hello-service-v2
+        app.kubernetes.io/protocol: dubbo
+        app.kubernetes.io/canary: v2
+    spec:
+      initContainers:
+      - name: init
+        image: "flomesh/wait-for-it:1.0.0"
+        imagePullPolicy: IfNotPresent
+        command:
+        - bash
+        - -c
+        - |+
+          /wait-for-it.sh --strict --timeout=0 \
+            --host=zookeeper-service.flomesh-dubbo.svc \
+            --port=2181 \
+            -- echo "SERVICE IS READY!"
+      containers:
+      - image: "flomesh/samples-hello-svc:2.0.0-dubbo"
+        imagePullPolicy: Always
+        name: app
+        ports:
+        - name: dubbo
+          containerPort: 20880
+        command:
+        - sh
+        - -c
+        - |-
+          proxychains4 -f /proxychains/proxychains.conf \
+            java -javaagent:/opentelemetry-javaagent-all.jar \
+            -Dotel.traces.exporter=logging \
+            -Dotel.metrics.exporter=none \
+            -Dotel.propagators=tracecontext,baggage,b3multi \
+            -Dotel.javaagent.debug=false \
+            -Dotel.resource.attributes="service.name=$(_pod_serviceName),service.namespace=$(_pod_ns),service.instance.id=$(_pod_name)" \
+            -Dotel.traces.sampler=parentbased_always_on \
+            -Xms512m -Xmx2048m \
+            -Djava.security.egd=file:/dev/./urandom \
+            -jar /app.jar
+        env:
+        - name: _pod_ns
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: _pod_nodeName
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: _pod_name
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: _pod_serviceName
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['service.flomesh.io/name']
+        - name: _pod_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: _pod_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: _pod_hostIP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: SAMPLES_ZK_HOSTNAME
+          value: zookeeper-service.flomesh-dubbo.svc
+        - name: SAMPLES_ZK_PORT
+          value: "2181"
+        volumeMounts:
+        - name: proxy-cfg
+          mountPath: /proxychains
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60
+      volumes:
+      - name: proxy-cfg
+        configMap:
+          name: proxychains-cfg
+---
+# Source: dubbo-mesh/templates/deployment-mock.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-service-dp
+  namespace: flomesh-dubbo
+  labels:
+    helm.sh/chart: dubbo-mesh-0.1.0
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/instance: poc-mock
+    app.kubernetes.io/version: "1.19.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dubbo-mesh
+      app.kubernetes.io/instance: poc-mock
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dubbo-mesh
+        app.kubernetes.io/instance: poc-mock
+    spec:
+      containers:
+      - name: mock
+        image: "flomesh/samples-mock-svc:1.0.0-dubbo"
+        imagePullPolicy: Always
+        ports:
+        #- name: dubbo
+        #  containerPort: 20880
+        #- name: canary
+        #  containerPort: 30881
+        - name: metrics
+          containerPort: 9001
+        #command:
+        #- /usr/local/bin/pipy
+        #- /config/mock.js
+        #- --reuse-port
+        #- --log-level=debug
+        env:
+        - name: _pod_ns
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: _pod_nodeName
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: _pod_name
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: _pod_serviceName
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['service.flomesh.io/name']
+        - name: _pod_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: _pod_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: _pod_hostIP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: PIPY_SERVICE_NAME
+          value: mock-service
+        #volumeMounts:
+        #- name:  config
+        #  mountPath:  /config
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60
+      #volumes:
+      #- name: config
+      #  configMap:
+      #    name: poc-mock-cfg
+---
+# Source: dubbo-mesh/templates/deployment-time-v1.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: time-service-v1-dp
+  namespace: flomesh-dubbo
+  labels:
+    helm.sh/chart: dubbo-mesh-0.1.0
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/instance: time-service-v1
+    app.kubernetes.io/protocol: dubbo
+    app.kubernetes.io/canary: v1
+    app.kubernetes.io/version: "1.19.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dubbo-mesh
+      app.kubernetes.io/instance: time-service-v1
+      app.kubernetes.io/protocol: dubbo
+      app.kubernetes.io/canary: v1
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        flomesh.io/inject: "true"
+        service.flomesh.io/name: time-service-v1
+      labels:
+        app.kubernetes.io/name: dubbo-mesh
+        app.kubernetes.io/instance: time-service-v1
+        app.kubernetes.io/protocol: dubbo
+        app.kubernetes.io/canary: v1
+    spec:
+      initContainers:
+      - name: init
+        image: "flomesh/wait-for-it:1.0.0"
+        imagePullPolicy: IfNotPresent
+        command:
+        - bash
+        - -c
+        - |+
+          /wait-for-it.sh --strict --timeout=0 \
+            --host=zookeeper-service.flomesh-dubbo.svc \
+            --port=2181 \
+            -- echo "SERVICE IS READY!"
+      containers:
+      - image: "flomesh/samples-time-svc:1.0.0-dubbo"
+        imagePullPolicy: Always
+        name: app
+        ports:
+        - name: dubbo
+          containerPort: 20880
+        command:
+        - sh
+        - -c
+        - |-
+          proxychains4 -f /proxychains/proxychains.conf \
+            java -javaagent:/opentelemetry-javaagent-all.jar \
+            -Dotel.traces.exporter=logging \
+            -Dotel.metrics.exporter=none \
+            -Dotel.propagators=tracecontext,baggage,b3multi \
+            -Dotel.javaagent.debug=false \
+            -Dotel.resource.attributes="service.name=$(_pod_serviceName),service.namespace=$(_pod_ns),service.instance.id=$(_pod_name)" \
+            -Dotel.traces.sampler=parentbased_always_on \
+            -Xms512m -Xmx2048m \
+            -Djava.security.egd=file:/dev/./urandom \
+            -jar /app.jar
+        env:
+        - name: _pod_ns
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: _pod_nodeName
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: _pod_name
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: _pod_serviceName
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['service.flomesh.io/name']
+        - name: _pod_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: _pod_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: _pod_hostIP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: SAMPLES_ZK_HOSTNAME
+          value: zookeeper-service.flomesh-dubbo.svc
+        - name: SAMPLES_ZK_PORT
+          value: "2181"
+        volumeMounts:
+        - name: proxy-cfg
+          mountPath: /proxychains
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60
+      volumes:
+      - name: proxy-cfg
+        configMap:
+          name: proxychains-cfg
+---
+# Source: dubbo-mesh/templates/deployment-time-v2.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: time-service-v2-dp
+  namespace: flomesh-dubbo
+  labels:
+    helm.sh/chart: dubbo-mesh-0.1.0
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/instance: time-service-v2
+    app.kubernetes.io/protocol: dubbo
+    app.kubernetes.io/canary: v2
+    app.kubernetes.io/version: "1.19.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dubbo-mesh
+      app.kubernetes.io/instance: time-service-v2
+      app.kubernetes.io/protocol: dubbo
+      app.kubernetes.io/canary: v2
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        flomesh.io/inject: "true"
+        service.flomesh.io/name: time-service-v2
+      labels:
+        app.kubernetes.io/name: dubbo-mesh
+        app.kubernetes.io/instance: time-service-v2
+        app.kubernetes.io/protocol: dubbo
+        app.kubernetes.io/canary: v2
+    spec:
+      initContainers:
+      - name: init
+        image: "flomesh/wait-for-it:1.0.0"
+        imagePullPolicy: IfNotPresent
+        command:
+        - bash
+        - -c
+        - |+
+          /wait-for-it.sh --strict --timeout=0 \
+            --host=zookeeper-service.flomesh-dubbo.svc \
+            --port=2181 \
+            -- echo "SERVICE IS READY!"
+      containers:
+      - image: "flomesh/samples-time-svc:2.0.0-dubbo"
+        imagePullPolicy: Always
+        name: app
+        ports:
+        - name: dubbo
+          containerPort: 20880
+        command:
+        - sh
+        - -c
+        - |-
+          proxychains4 -f /proxychains/proxychains.conf \
+            java -javaagent:/opentelemetry-javaagent-all.jar \
+            -Dotel.traces.exporter=logging \
+            -Dotel.metrics.exporter=none \
+            -Dotel.propagators=tracecontext,baggage,b3multi \
+            -Dotel.javaagent.debug=false \
+            -Dotel.resource.attributes="service.name=$(_pod_serviceName),service.namespace=$(_pod_ns),service.instance.id=$(_pod_name)" \
+            -Dotel.traces.sampler=parentbased_always_on \
+            -Xms512m -Xmx2048m \
+            -Djava.security.egd=file:/dev/./urandom \
+            -jar /app.jar
+        env:
+        - name: _pod_ns
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: _pod_nodeName
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: _pod_name
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: _pod_serviceName
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['service.flomesh.io/name']
+        - name: _pod_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: _pod_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: _pod_hostIP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: SAMPLES_ZK_HOSTNAME
+          value: zookeeper-service.flomesh-dubbo.svc
+        - name: SAMPLES_ZK_PORT
+          value: "2181"
+        volumeMounts:
+        - name: proxy-cfg
+          mountPath: /proxychains
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60
+      volumes:
+      - name: proxy-cfg
+        configMap:
+          name: proxychains-cfg
+---
+# Source: dubbo-mesh/templates/deployment-zookeeper.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zookeeper-service-dp
+  namespace: flomesh-dubbo
+  labels:
+    helm.sh/chart: dubbo-mesh-0.1.0
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/version: "1.19.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dubbo-mesh
+      app.kubernetes.io/instance: zookeeper-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dubbo-mesh
+        app.kubernetes.io/instance: zookeeper-service
+    spec:
+      containers:
+      - name: zk
+        image: "zookeeper:3.6.3"
+        imagePullPolicy:  IfNotPresent
+        ports:
+        - name: zk
+          containerPort: 2181
+---
+# Source: dubbo-mesh/templates/service-consumer-v1.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: consumer-service-v1
+  namespace: flomesh-dubbo
+spec:
+  selector:
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/instance: consumer-service-v1
+    app.kubernetes.io/protocol: http
+    app.kubernetes.io/canary: v1
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: http
+  - name: proxy-http
+    port: 8090
+    protocol: TCP
+    targetPort: 8090
+---
+# Source: dubbo-mesh/templates/service-consumer-v2.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: consumer-service-v2
+  namespace: flomesh-dubbo
+spec:
+  selector:
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/instance: consumer-service-v2
+    app.kubernetes.io/protocol: http
+    app.kubernetes.io/canary: v2
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: http
+  - name: proxy-http
+    port: 8090
+    protocol: TCP
+    targetPort: 8090
+---
+# Source: dubbo-mesh/templates/service-mock.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-service
+  namespace: flomesh-dubbo
+spec:
+  selector:
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/instance: poc-mock
+  ports:
+  #- name: dubbo
+  #  port: 
+  #  targetPort: dubbo
+  #  protocol: TCP
+  #- name: canary
+  #  port: 
+  #  targetPort: canary
+  #  protocol: TCP
+  - name: metrics
+    port: 9001
+    targetPort: metrics
+    protocol: TCP
+---
+# Source: dubbo-mesh/templates/service-zookeeper.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper-service
+  namespace: flomesh-dubbo
+spec:
+  selector:
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/instance: zookeeper-service
+  ports:
+  - name: zk
+    port: 2181
+    protocol: TCP
+    targetPort: zk
+---
+# Source: dubbo-mesh/templates/canary-router.yaml
+apiVersion: flomesh.io/v1alpha1
+kind: Proxy
+metadata:
+  name: canary-router
+  namespace: flomesh-dubbo
+spec:
+  mode: Standalone
+  replicas: 1
+  port: 6000
+  env:
+  - name: PIPY_SERVICE_NAME
+    value: "canary-router"
+  - name: PIPY_CONFIG_SRV_URL
+    value: "http://mock-service.flomesh-dubbo.svc:9001/services/$(PIPY_SERVICE_NAME)/config"
+  - name: PIPY_LISTEN_INBOUND_HTTP
+    value: "6000"
+  config:
+    config.js: |+
+
+      pipy({
+        _g: {
+          configInbound: null,
+          configOutbound: null,
+          responseCache: null,
+          autoRequestID: 0,
+        },
+      
+        _httpTarget: null,
+      })
+      
+        //
+        // Inbound traffic
+        //
+      .listen(os.env.PIPY_LISTEN_INBOUND_HTTP || 8080)
+        .decodeHttpRequest()
+        .demux('routing')
+        .encodeHttpResponse()
+
+      .pipeline('routing')
+        .handleMessageStart(
+          (msg, ver, canary) => (
+            console.log("msg.head.headers=" + JSON.stringify(msg.head.headers)),
+            ver = msg.head.headers['x-canary-version'],
+            console.log("X-CANARY-VERSION=" + ver),
+            canary = _g.configInbound.canary,
+            console.log("CANARY TARGETS=" + JSON.stringify(canary)),
+            ver && canary ? (
+              _httpTarget = canary[ver]
+            ) : (
+              _httpTarget = _g.configInbound.defaultTarget
+            ),
+            console.log("_httpTarget=" + _httpTarget)
+          )
+        )
+        .link(
+          'process', () => _httpTarget != undefined,
+          '404'
+        )
+      
+      .pipeline('process')
+        .encodeHttpRequest()
+        .connect(() => _httpTarget)
+        .decodeHttpResponse()
+      
+      .pipeline('404')
+        .replaceMessage(
+          new Message(
+            {
+              status: 404,
+              headers: {
+                'content-type': 'text/plain',
+              },
+            },
+            'Not Found\n'
+          )
+        )
+        .encodeHttpResponse()
+      
+        //
+        // Configuration update
+        //
+      .task('5s')
+        .use(
+          'updater.js',
+          'check',
+          os.env.PIPY_CONFIG_SRV_URL || 'http://127.0.0.1:9000/config',
+          config => (
+            _g.configInbound = config.inbound,
+            _g.configInbound.whitelist = config.inbound.whitelist?.map?.(cidr => new Netmask(cidr)),
+            _g.configInbound.blacklist = config.inbound.blacklist?.map?.(cidr => new Netmask(cidr)),
+            _g.responseCache = config.inbound.cache ? new algo.Cache(config.inbound.cache.size) : null,
+            _g.configOutbound = config.outbound
+          )
+        )
+    updater.js: |+
+
+      pipy({
+        _g: {
+          configVersion: 0,
+        },
+      
+        _configVersion: undefined,
+        _configUpdated: undefined,
+        _url: null,
+      })
+      
+      .pipeline('check')
+        .link(
+          'check-config-http', () => __argv[0].startsWith('http://'),
+          'check-config-file'
+        )
+      
+      // Check configuration in file
+      .pipeline('check-config-file')
+        .onMessageStart(
+          () => (
+            _configVersion = os.stat(__argv[0])?.mtime | 0,
+            _configVersion !== _g.configVersion && (
+              _g.configVersion = _configVersion,
+              _configUpdated = true
+            )
+          )
+        )
+        .link(
+          'update-config-file', () => _configUpdated,
+          'end-of-task'
+        )
+      
+      // Update configuration from file
+      .pipeline('update-config-file')
+        .onSessionStart(
+          () => (
+            console.log('Updating configuration...'),
+            __argv[1](JSON.decode(os.readFile(__argv[0]))),
+            console.log('Configuration updated.')
+          )
+        )
+        .link('end-of-task')
+      
+      // Check configuration via HTTP
+      .pipeline('check-config-http')
+        .replaceMessage(
+          () => (
+            _url = new URL(__argv[0] + '/version'),
+            new Message({
+              method: 'GET',
+              path: _url.path,
+              headers: {
+                Host: _url.host,
+              },
+            })
+          )
+        )
+        .encodeHttpRequest()
+        .connect(() => _url.host)
+        .decodeHttpResponse()
+        .replaceMessage(msg => (
+            msg.head.status === 200 && (
+                _configUpdated = msg.body.toString() != _g.configVersion,
+                _g.configVersion = msg.body.toString()
+            ),
+            msg
+        ))
+        .link(
+          'update-config-http', () => _configUpdated,
+          'end-of-task'
+        )
+      
+      // Update configuration from HTTP
+      .pipeline('update-config-http')
+        .onSessionStart(
+          () => console.log('Updating configuration...')
+        )
+        .replaceMessage(
+          () => (
+            _url = new URL(__argv[0]),
+            new Message({
+              method: 'GET',
+              path: _url.path,
+              headers: {
+                Host: _url.host,
+              },
+            })
+          )
+        )
+        .encodeHttpRequest()
+        .connect(
+          () => _url.host
+        )
+        .decodeHttpResponse()
+        .onMessageBody(
+          body => (
+            __argv[1](JSON.decode(body)),
+            console.log('Configuration updated.')
+          )
+        )
+        .link('end-of-task')
+      
+      // End of task
+      .pipeline('end-of-task')
+        .replaceMessage(new SessionEnd)
+---
+# Source: dubbo-mesh/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-canary-router
+  namespace: flomesh-dubbo
+  labels:
+    helm.sh/chart: dubbo-mesh-0.1.0
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/version: "1.19.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  rules:
+    - host: "dubbo.demo.flomesh.cn"
+      http:
+        paths:
+          - path: /hello
+            pathType: Prefix
+            backend:
+              service:
+                name: canary-router-fsmsvc
+                port:
+                  number: 6000

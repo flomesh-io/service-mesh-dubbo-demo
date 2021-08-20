@@ -1,0 +1,16 @@
+---
+# Source: dubbo-mesh/templates/service-zookeeper.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper-service
+  namespace: flomesh-dubbo
+spec:
+  selector:
+    app.kubernetes.io/name: dubbo-mesh
+    app.kubernetes.io/instance: zookeeper-service
+  ports:
+  - name: zk
+    port: 2181
+    protocol: TCP
+    targetPort: zk

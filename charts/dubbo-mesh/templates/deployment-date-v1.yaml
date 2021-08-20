@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.dateV1.service.name }}-dp
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "dubbo-mesh.date-service-v1.labels" . | nindent 4 }}
+spec:
+  progressDeadlineSeconds: 600
+  replicas: {{ .Values.dateV1.replicaCount }}
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      {{- include "dubbo-mesh.date-service-v1.selectorLabels" . | nindent 6 }}
+  {{- with .Values.dateV1.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      {{- with .Values.dateV1.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "dubbo-mesh.date-service-v1.selectorLabels" . | nindent 8 }}
+    spec:
+      initContainers:
+      - name: init
+        image: "{{ .Values.image.flomeshRepository }}/{{ .Values.waitForIt.image }}:{{ .Values.waitForIt.tag }}"
+        imagePullPolicy: {{ .Values.waitForIt.pullPolicy }}
+        command:
+        - bash
+        - -c
+        - |+
+          /wait-for-it.sh --strict --timeout=0 \
+            --host={{ .Values.zookeeper.service.name }}.{{ .Values.namespace }}.svc \
+            --port={{ .Values.zookeeper.service.port }} \
+            -- echo "SERVICE IS READY!"
+      containers:
+      - image: "{{ .Values.image.flomeshRepository }}/{{ .Values.dateV1.image.name }}:{{ .Values.dateV1.image.tag }}"
+        imagePullPolicy: {{ .Values.dateV1.image.pullPolicy }}
+        name: app
+        ports:
+        - name: dubbo
+          containerPort: 20880
+        command:
+        {{- with .Values.podCommand }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.dateV1.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        env:
+        {{- with .Values.commonEnvs }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        - name: SAMPLES_ZK_HOSTNAME
+          value: {{ .Values.zookeeper.service.name }}.{{ .Values.namespace }}.svc
+        - name: SAMPLES_ZK_PORT
+          value: {{ .Values.zookeeper.service.port | quote }}
+        volumeMounts:
+        - name: proxy-cfg
+          mountPath: /proxychains
+      restartPolicy: {{ .Values.restartPolicy }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      volumes:
+        - name: proxy-cfg
+          configMap:
+            name: {{ .Values.proxychains.configMap.name }}
+

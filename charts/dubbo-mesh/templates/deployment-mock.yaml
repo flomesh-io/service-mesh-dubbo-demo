@@ -1,0 +1,62 @@
+{{- if not (eq "vm" .Values.mock.mode) -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.mock.service.name }}-dp
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "dubbo-mesh.mock.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.mock.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "dubbo-mesh.mock.selectorLabels" . | nindent 6 }}
+  {{- with .Values.mock.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      {{- with .Values.mock.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "dubbo-mesh.mock.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: mock
+        image: "{{ .Values.image.flomeshRepository }}/{{ .Values.mock.image.name }}:{{ .Values.mock.image.tag }}"
+        imagePullPolicy: {{ .Values.mock.image.pullPolicy }}
+        ports:
+        #- name: dubbo
+        #  containerPort: 20880
+        #- name: canary
+        #  containerPort: 30881
+        - name: metrics
+          containerPort: 9001
+        #command:
+        #- /usr/local/bin/pipy
+        #- /config/mock.js
+        #- --reuse-port
+        #- --log-level=debug
+        {{- with .Values.mock.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        env:
+        {{- with .Values.commonEnvs }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        - name: PIPY_SERVICE_NAME
+          value: {{ .Values.mock.service.name }}
+        #volumeMounts:
+        #- name:  config
+        #  mountPath:  /config
+      restartPolicy: {{ .Values.restartPolicy }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      #volumes:
+      #- name: config
+      #  configMap:
+      #    name: {{ .Values.mock.configMap.name }}
+{{- end }}      

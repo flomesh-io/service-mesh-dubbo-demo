@@ -1,0 +1,14 @@
+{{- if not (eq "vm" .Values.mock.mode) -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.mock.configMap.name }}
+  namespace: {{ .Values.namespace }}
+data:
+  mock.js: |+
+{{ (.Files.Get "scripts/mock.js") | replace "modules/config.js" "updater.js" | nindent 4 }}
+  config.json: |+
+{{ (.Files.Get "scripts/config.json") | nindent 4 }}
+  updater.js: |+
+{{ (.Files.Get "scripts/modules/config.js") | nindent 4 }} 
+{{- end }}

@@ -1,0 +1,23 @@
+{{- if not (eq "vm" .Values.mock.mode) -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.mock.service.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    {{- include "dubbo-mesh.mock.selectorLabels" . | nindent 4 }}
+  ports:
+  #- name: dubbo
+  #  port: {{ .Values.mock.service.port.dubbo }}
+  #  targetPort: dubbo
+  #  protocol: TCP
+  #- name: canary
+  #  port: {{ .Values.mock.service.port.canary }}
+  #  targetPort: canary
+  #  protocol: TCP
+  - name: metrics
+    port: {{ .Values.mock.service.port.metrics }}
+    targetPort: metrics
+    protocol: TCP
+{{- end }}
