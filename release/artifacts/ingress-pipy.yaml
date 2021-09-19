@@ -849,7 +849,7 @@ spec:
         - --v=2
         command:
         - /ingress-cfg
-        image: flomesh/ingress-cfg:0.2.2
+        image: flomesh/ingress-cfg:0.2.3
         imagePullPolicy: IfNotPresent
         livenessProbe:
           httpGet:
@@ -1027,7 +1027,7 @@ spec:
         - --v=2
         command:
         - /ingress-manager
-        image: flomesh/ingress-manager:0.2.2
+        image: flomesh/ingress-manager:0.2.3
         imagePullPolicy: IfNotPresent
         livenessProbe:
           httpGet:
