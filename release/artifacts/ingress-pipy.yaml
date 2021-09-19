@@ -12,7 +12,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.4.1
+    controller-gen.kubebuilder.io/version: v0.6.1
   creationTimestamp: null
   name: ingressglobalhooks.flomesh.io
 spec:
@@ -76,8 +76,8 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    cert-manager.io/inject-ca-from: ingress-pipy/serving-cert
-    controller-gen.kubebuilder.io/version: v0.4.1
+    cert-manager.io/inject-ca-from: ingress-pipy/serving-cert-fip
+    controller-gen.kubebuilder.io/version: v0.6.1
   name: ingressrules.flomesh.io
 spec:
   group: flomesh.io
@@ -132,13 +132,13 @@ status:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: ingress-pipy
+  name: ingress-pipy-fip
   namespace: ingress-pipy
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: ingress-pipy-leader-election-role
+  name: ingress-pipy-leader-election-role-fip
   namespace: ingress-pipy
 rules:
 - apiGroups:
@@ -167,7 +167,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   creationTimestamp: null
-  name: ingress-pipy-role
+  name: ingress-pipy-role-fip
 rules:
 - apiGroups:
   - apps
@@ -327,28 +327,28 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: ingress-pipy-leader-election-rolebinding
+  name: ingress-pipy-leader-election-rolebinding-fip
   namespace: ingress-pipy
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: ingress-pipy-leader-election-role
+  name: ingress-pipy-leader-election-role-fip
 subjects:
 - kind: ServiceAccount
-  name: ingress-pipy
+  name: ingress-pipy-fip
   namespace: ingress-pipy
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: ingress-pipy-rolebinding
+  name: ingress-pipy-rolebinding-fip
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: ingress-pipy-role
+  name: ingress-pipy-role-fip
 subjects:
 - kind: ServiceAccount
-  name: ingress-pipy
+  name: ingress-pipy-fip
   namespace: ingress-pipy
 ---
 apiVersion: v1
@@ -689,7 +689,7 @@ data:
       .connect(
         () => _url.host
       )
-      .decodeHttpResponse({bodiless: true})
+      .decodeHttpBodilessResponse()
       .onMessageStart(
         msg => _needUpdate = (
           msg.head.status === 200 &&
@@ -731,7 +731,7 @@ data:
       )
 kind: ConfigMap
 metadata:
-  name: ingress-config
+  name: ingress-config-fip
   namespace: ingress-pipy
 ---
 apiVersion: v1
@@ -743,7 +743,7 @@ metadata:
     app.kubernetes.io/managed-by: Kustomize
     app.kubernetes.io/name: ingress-pipy
     app.kubernetes.io/version: 0.2.0
-  name: ingress-pipy-cfg
+  name: ingress-pipy-cfg-fip
   namespace: ingress-pipy
 spec:
   ports:
@@ -766,7 +766,7 @@ metadata:
     app.kubernetes.io/managed-by: Kustomize
     app.kubernetes.io/name: ingress-pipy
     app.kubernetes.io/version: 0.2.0
-  name: ingress-pipy-controller
+  name: ingress-pipy-controller-fip
   namespace: ingress-pipy
 spec:
   externalTrafficPolicy: Local
@@ -790,7 +790,7 @@ metadata:
     app.kubernetes.io/managed-by: Kustomize
     app.kubernetes.io/name: ingress-pipy
     app.kubernetes.io/version: 0.2.0
-  name: ingress-pipy-defaultbackend
+  name: ingress-pipy-defaultbackend-fip
   namespace: ingress-pipy
 spec:
   ports:
@@ -807,7 +807,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: webhook-service
+  name: webhook-service-fip
   namespace: ingress-pipy
 spec:
   ports:
@@ -825,7 +825,7 @@ metadata:
     app.kubernetes.io/managed-by: Kustomize
     app.kubernetes.io/name: ingress-pipy
     app.kubernetes.io/version: 0.2.0
-  name: ingress-pipy-cfg
+  name: ingress-pipy-cfg-fip
   namespace: ingress-pipy
 spec:
   replicas: 1
@@ -844,11 +844,12 @@ spec:
       containers:
       - args:
         - --leader-elect=false
-        - --default-backend=ingress-pipy-defaultbackend.ingress-pipy.svc
+        - --default-backend=ingress-pipy-defaultbackend-fip.ingress-pipy.svc
         - --config-bind-address=:6000
+        - --v=2
         command:
         - /ingress-cfg
-        image: flomesh/ingress-cfg:0.2.1
+        image: flomesh/ingress-cfg:0.2.2
         imagePullPolicy: IfNotPresent
         livenessProbe:
           httpGet:
@@ -872,17 +873,17 @@ spec:
           periodSeconds: 10
         resources:
           limits:
-            cpu: 100m
-            memory: 30Mi
+            cpu: 1000m
+            memory: 500Mi
           requests:
-            cpu: 100m
-            memory: 20Mi
+            cpu: 250m
+            memory: 100Mi
         securityContext:
           allowPrivilegeEscalation: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 101
-      serviceAccountName: ingress-pipy
+      serviceAccountName: ingress-pipy-fip
       terminationGracePeriodSeconds: 10
 ---
 apiVersion: apps/v1
@@ -894,7 +895,7 @@ metadata:
     app.kubernetes.io/managed-by: Kustomize
     app.kubernetes.io/name: ingress-pipy
     app.kubernetes.io/version: 0.2.0
-  name: ingress-pipy-controller
+  name: ingress-pipy-controller-fip
   namespace: ingress-pipy
 spec:
   replicas: 1
@@ -924,11 +925,11 @@ spec:
         - name: PIPY_CONFIG
           value: $(PIPY_CONFIG_PATH)/$(PIPY_CONFIG_NAME)
         - name: INGRESS_CONFIG_URL
-          value: http://ingress-pipy-cfg.ingress-pipy.svc:6000/routes
+          value: http://ingress-pipy-cfg-fip.ingress-pipy.svc:6000/routes
         - name: INGRESS_VERSION_URL
-          value: http://ingress-pipy-cfg.ingress-pipy.svc:6000/version
+          value: http://ingress-pipy-cfg-fip.ingress-pipy.svc:6000/version
         - name: INGRESS_SCRIPT_URL
-          value: http://ingress-pipy-cfg.ingress-pipy.svc:6000/scripts
+          value: http://ingress-pipy-cfg-fip.ingress-pipy.svc:6000/scripts
         - name: _pod_ns
           valueFrom:
             fieldRef:
@@ -949,7 +950,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.hostIP
-        image: flomesh/pipy-pjs:0.4.0-118
+        image: flomesh/pipy-pjs:0.4.0-115
         imagePullPolicy: Always
         name: ingress
         ports:
@@ -972,7 +973,7 @@ spec:
         - -c
         - |
           /wait-for-it.sh --strict --timeout=0 \
-            --host=ingress-pipy-cfg.ingress-pipy.svc \
+            --host=ingress-pipy-cfg-fip.ingress-pipy.svc \
             --port=6000 \
             -- echo "SERVICE IS READY!" && cp -fv /ingress/* /config
         image: flomesh/wait-for-it:1.0.0
@@ -983,11 +984,11 @@ spec:
           name: config
         - mountPath: /config
           name: shared
-      serviceAccountName: ingress-pipy
+      serviceAccountName: ingress-pipy-fip
       terminationGracePeriodSeconds: 10
       volumes:
       - configMap:
-          name: ingress-config
+          name: ingress-config-fip
         name: config
       - emptyDir: {}
         name: shared
@@ -1002,7 +1003,7 @@ metadata:
     app.kubernetes.io/name: ingress-pipy
     app.kubernetes.io/version: 0.2.0
     control-plane: ingress-pipy-manager
-  name: ingress-pipy-manager
+  name: ingress-pipy-manager-fip
   namespace: ingress-pipy
 spec:
   replicas: 1
@@ -1023,9 +1024,10 @@ spec:
       containers:
       - args:
         - --leader-elect
+        - --v=2
         command:
         - /ingress-manager
-        image: flomesh/ingress-manager:0.2.1
+        image: flomesh/ingress-manager:0.2.2
         imagePullPolicy: IfNotPresent
         livenessProbe:
           httpGet:
@@ -1060,7 +1062,7 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 101
-      serviceAccountName: ingress-pipy
+      serviceAccountName: ingress-pipy-fip
       terminationGracePeriodSeconds: 10
       volumes:
       - name: cert
@@ -1071,21 +1073,21 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: serving-cert
+  name: serving-cert-fip
   namespace: ingress-pipy
 spec:
   dnsNames:
-  - webhook-service.ingress-pipy.svc
-  - webhook-service.ingress-pipy.svc.cluster.local
+  - webhook-service-fip.ingress-pipy.svc
+  - webhook-service-fip.ingress-pipy.svc.cluster.local
   issuerRef:
     kind: Issuer
-    name: selfsigned-issuer
+    name: selfsigned-issuer-fip
   secretName: webhook-server-cert
 ---
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: selfsigned-issuer
+  name: selfsigned-issuer-fip
   namespace: ingress-pipy
 spec:
   selfSigned: {}
@@ -1094,15 +1096,15 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
   annotations:
-    cert-manager.io/inject-ca-from: ingress-pipy/serving-cert
-  name: mutating-webhook-configuration
+    cert-manager.io/inject-ca-from: ingress-pipy/serving-cert-fip
+  name: mutating-webhook-configuration-fip
 webhooks:
 - admissionReviewVersions:
   - v1
   - v1beta1
   clientConfig:
     service:
-      name: webhook-service
+      name: webhook-service-fip
       namespace: ingress-pipy
       path: /mutate-flomesh-io-v1alpha1-ingressglobalhook
   failurePolicy: Fail
@@ -1123,7 +1125,7 @@ webhooks:
   - v1beta1
   clientConfig:
     service:
-      name: webhook-service
+      name: webhook-service-fip
       namespace: ingress-pipy
       path: /mutate-mydummy-polaris-tech-io-v1alpha1-ingressrule
   failurePolicy: Fail
@@ -1144,15 +1146,15 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
   annotations:
-    cert-manager.io/inject-ca-from: ingress-pipy/serving-cert
-  name: validating-webhook-configuration
+    cert-manager.io/inject-ca-from: ingress-pipy/serving-cert-fip
+  name: validating-webhook-configuration-fip
 webhooks:
 - admissionReviewVersions:
   - v1
   - v1beta1
   clientConfig:
     service:
-      name: webhook-service
+      name: webhook-service-fip
       namespace: ingress-pipy
       path: /validate-flomesh-io-v1alpha1-ingressglobalhook
   failurePolicy: Fail
@@ -1173,7 +1175,7 @@ webhooks:
   - v1beta1
   clientConfig:
     service:
-      name: webhook-service
+      name: webhook-service-fip
       namespace: ingress-pipy
       path: /validate-mydummy-polaris-tech-io-v1alpha1-ingressrule
   failurePolicy: Fail
