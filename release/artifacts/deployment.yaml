@@ -1417,6 +1417,7 @@ spec:
   mode: Standalone
   replicas: 1
   port: 6000
+  image: flomesh/pipy-pjs:0.4.0-115
   env:
   - name: PIPY_SERVICE_NAME
     value: "canary-router"
