@@ -23,10 +23,10 @@ import org.springframework.beans.factory.annotation.Value;
  */
 @DubboService(version = "${hello.service.version}")
 public class DefaultHelloService implements DemoHelloService {
-    @DubboReference(version = "${date.service.version}", timeout = 2000, parameters={"heartbeat","5000"})
+    @DubboReference(version = "${date.service.version}", timeout = 2000, parameters={"send.reconnect","true"})
     private DemoDateService dateService;
 
-    @DubboReference(version = "${time.service.version}", timeout = 2000, parameters={"heartbeat","5000"})
+    @DubboReference(version = "${time.service.version}", timeout = 2000, parameters={"send.reconnect","true"})
     private DemoTimeService timeService;
 
 

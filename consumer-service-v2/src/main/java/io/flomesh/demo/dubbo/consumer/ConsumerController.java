@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 public class ConsumerController {
-    @DubboReference(version = "${hello.service.version}", timeout = 6000, parameters={"heartbeat","5000"})
+    @DubboReference(version = "${hello.service.version}", timeout = 6000, parameters={"send.reconnect","true"})
     private DemoHelloService helloService;
 
     @PostMapping(path = "/hello", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.TEXT_PLAIN_VALUE)
