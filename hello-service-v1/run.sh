@@ -1,7 +1,7 @@
 #!/bin/sh
 
 proxychains4 -f /proxychains/proxychains.conf \
-  java -javaagent:/opentelemetry-javaagent-all.jar \
+  java -javaagent:/opentelemetry-javaagent.jar \
   -Dotel.traces.exporter=logging \
   -Dotel.metrics.exporter=none \
   -Dotel.propagators=tracecontext,baggage,b3multi \
