@@ -37,7 +37,7 @@ jobs:
       uses: docker/build-push-action@v2
       with:
         context: ./consumer-service-v1
-        platforms: linux/amd64
+        platforms: linux/amd64,linux/arm64
         push: true
         tags: flomesh/samples-consumer-svc:1.0.0-dubbo
     
@@ -45,7 +45,7 @@ jobs:
       uses: docker/build-push-action@v2
       with:
         context: ./time-service-v1
-        platforms: linux/amd64
+        platforms: linux/amd64,linux/arm64
         push: true
         tags: flomesh/samples-time-svc:1.0.0-dubbo
 
@@ -53,7 +53,7 @@ jobs:
       uses: docker/build-push-action@v2
       with:
         context: ./hello-service-v1
-        platforms: linux/amd64
+        platforms: linux/amd64,linux/arm64
         push: true
         tags: flomesh/samples-hello-svc:1.0.0-dubbo
 
@@ -61,7 +61,7 @@ jobs:
       uses: docker/build-push-action@v2
       with:
         context: ./date-service-v1
-        platforms: linux/amd64
+        platforms: linux/amd64,linux/arm64
         push: true
         tags: flomesh/samples-date-svc:1.0.0-dubbo
 
@@ -69,7 +69,7 @@ jobs:
       uses: docker/build-push-action@v2
       with:
         context: ./consumer-service-v2
-        platforms: linux/amd64
+        platforms: linux/amd64,linux/arm64
         push: true
         tags: flomesh/samples-consumer-svc:2.0.0-dubbo
 
@@ -77,7 +77,7 @@ jobs:
       uses: docker/build-push-action@v2
       with:
         context: ./time-service-v2
-        platforms: linux/amd64
+        platforms: linux/amd64,linux/arm64
         push: true
         tags: flomesh/samples-time-svc:2.0.0-dubbo
 
@@ -85,7 +85,7 @@ jobs:
       uses: docker/build-push-action@v2
       with:
         context: ./hello-service-v2
-        platforms: linux/amd64
+        platforms: linux/amd64,linux/arm64
         push: true
         tags: flomesh/samples-hello-svc:2.0.0-dubbo
 
@@ -93,7 +93,7 @@ jobs:
       uses: docker/build-push-action@v2
       with:
         context: ./date-service-v2
-        platforms: linux/amd64
+        platforms: linux/amd64,linux/arm64
         push: true
         tags: flomesh/samples-date-svc:2.0.0-dubbo
 
@@ -101,6 +101,6 @@ jobs:
       uses: docker/build-push-action@v2
       with:
         context: ./mock-service
-        platforms: linux/amd64
+        platforms: linux/amd64,linux/arm64
         push: true
         tags: flomesh/samples-mock-svc:1.0.0-dubbo
