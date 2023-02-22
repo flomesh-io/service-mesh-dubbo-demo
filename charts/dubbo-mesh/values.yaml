@@ -7,7 +7,7 @@ image:
 
 pipy:
   image: pipy-pjs
-  tag: 0.4.0-115
+  tag: 0.4.0-116
 
 waitForIt:
   image: wait-for-it

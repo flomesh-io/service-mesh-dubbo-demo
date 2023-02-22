@@ -12,7 +12,6 @@ spec:
       app.kubernetes.io/protocol: dubbo
   sidecars:
   - name: proxy
-    image: flomesh/pipy-pjs:0.4.0-115
     env:
     - name: PIPY_SERVICE_NAME
       valueFrom:
@@ -29,7 +28,7 @@ spec:
     - name: PIPY_LOGGER_URL
       value: "http://127.0.0.1:9090/log"
   - name: logger
-    image: flomesh/pipy-pjs:0.4.0-115
+    image: flomesh/pipy-pjs:0.4.0-116
     imagePullPolicy: IfNotPresent
     env:
     - name: PIPY_SERVICE_NAME
@@ -967,7 +966,6 @@ spec:
       app.kubernetes.io/protocol: http
   sidecars:
   - name: proxy
-    image: flomesh/pipy-pjs:0.4.0-115
     env:
     - name: PIPY_SERVICE_NAME
       valueFrom:
@@ -984,7 +982,7 @@ spec:
     - name: PIPY_LOGGER_URL
       value: "http://127.0.0.1:9090/log"
   - name: logger
-    image: flomesh/pipy-pjs:0.4.0-115
+    image: flomesh/pipy-pjs:0.4.0-116
     imagePullPolicy: IfNotPresent
     env:
     - name: PIPY_SERVICE_NAME

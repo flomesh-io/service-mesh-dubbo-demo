@@ -61,7 +61,7 @@ spec:
         command:
         - sh
         - -c
-        - |-
+        - |
           proxychains4 -f /proxychains/proxychains.conf \
             java -javaagent:/opentelemetry-javaagent.jar \
             -Dotel.traces.exporter=logging \

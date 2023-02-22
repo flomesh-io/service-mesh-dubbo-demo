@@ -7,6 +7,7 @@ spec:
   mode: Standalone
   replicas: 1
   port: {{ .Values.canary.service.port }}
+  image: flomesh/{{ .Values.pipy.image }}:{{ .Values.pipy.tag }}
   env:
   - name: PIPY_SERVICE_NAME
     value: {{ .Values.canary.service.name | quote }}

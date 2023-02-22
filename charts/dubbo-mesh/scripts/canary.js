@@ -53,7 +53,7 @@ pipy({
   .encodeHttpResponse()
 
   //
-  // Configuration update
+// Configuration update
   //
 .task('5s')
   .use(

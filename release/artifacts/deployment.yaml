@@ -337,7 +337,7 @@ spec:
         command:
         - sh
         - -c
-        - |-
+        - |
           proxychains4 -f /proxychains/proxychains.conf \
             java -javaagent:/opentelemetry-javaagent.jar \
             -Dotel.traces.exporter=logging \
@@ -454,7 +454,7 @@ spec:
         command:
         - sh
         - -c
-        - |-
+        - |
           proxychains4 -f /proxychains/proxychains.conf \
             java -javaagent:/opentelemetry-javaagent.jar \
             -Dotel.traces.exporter=logging \
@@ -571,7 +571,7 @@ spec:
         command:
         - sh
         - -c
-        - |-
+        - |
           proxychains4 -f /proxychains/proxychains.conf \
             java -javaagent:/opentelemetry-javaagent.jar \
             -Dotel.traces.exporter=logging \
@@ -688,7 +688,7 @@ spec:
         command:
         - sh
         - -c
-        - |-
+        - |
           proxychains4 -f /proxychains/proxychains.conf \
             java -javaagent:/opentelemetry-javaagent.jar \
             -Dotel.traces.exporter=logging \
@@ -805,7 +805,7 @@ spec:
         command:
         - sh
         - -c
-        - |-
+        - |
           proxychains4 -f /proxychains/proxychains.conf \
             java -javaagent:/opentelemetry-javaagent.jar \
             -Dotel.traces.exporter=logging \
@@ -922,7 +922,7 @@ spec:
         command:
         - sh
         - -c
-        - |-
+        - |
           proxychains4 -f /proxychains/proxychains.conf \
             java -javaagent:/opentelemetry-javaagent.jar \
             -Dotel.traces.exporter=logging \
@@ -1120,7 +1120,7 @@ spec:
         command:
         - sh
         - -c
-        - |-
+        - |
           proxychains4 -f /proxychains/proxychains.conf \
             java -javaagent:/opentelemetry-javaagent.jar \
             -Dotel.traces.exporter=logging \
@@ -1237,7 +1237,7 @@ spec:
         command:
         - sh
         - -c
-        - |-
+        - |
           proxychains4 -f /proxychains/proxychains.conf \
             java -javaagent:/opentelemetry-javaagent.jar \
             -Dotel.traces.exporter=logging \
@@ -1417,7 +1417,7 @@ spec:
   mode: Standalone
   replicas: 1
   port: 6000
-  image: flomesh/pipy-pjs:0.4.0-115
+  image: flomesh/pipy-pjs:0.4.0-116
   env:
   - name: PIPY_SERVICE_NAME
     value: "canary-router"
@@ -1444,10 +1444,6 @@ spec:
         //
       .listen(os.env.PIPY_LISTEN_INBOUND_HTTP || 8080)
         .decodeHttpRequest()
-        .demux('routing')
-        .encodeHttpResponse()
-
-      .pipeline('routing')
         .handleMessageStart(
           (msg, ver, canary) => (
             console.log("msg.head.headers=" + JSON.stringify(msg.head.headers)),
@@ -1471,7 +1467,6 @@ spec:
       .pipeline('process')
         .encodeHttpRequest()
         .connect(() => _httpTarget)
-        .decodeHttpResponse()
       
       .pipeline('404')
         .replaceMessage(
@@ -1488,7 +1483,7 @@ spec:
         .encodeHttpResponse()
       
         //
-        // Configuration update
+      // Configuration update
         //
       .task('5s')
         .use(

@@ -26,7 +26,7 @@ spec:
     - name: PIPY_LOGGER_URL
       value: "http://127.0.0.1:{{ .Values.logger.service.port }}/log"
   - name: logger
-    image: flomesh/pipy-pjs:0.4.0-116
+    image: flomesh/{{ .Values.pipy.image }}:{{ .Values.pipy.tag }}
     imagePullPolicy: IfNotPresent
     env:
     - name: PIPY_SERVICE_NAME
